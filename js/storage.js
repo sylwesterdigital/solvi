@@ -1,0 +1,9 @@
+/** IndexedDB using the browser's built-in API, without idb or a server. */
+const DB='solvi-xr-pilot-v1';const TABLES=['sessions','trials','kinematics','comfort','calibration'];
+let openPromise;
+function db(){if(!('indexedDB' in window))return Promise.reject(new Error('IndexedDB unavailable'));if(openPromise)return openPromise;openPromise=new Promise((resolve,reject)=>{const request=indexedDB.open(DB,1);request.onupgradeneeded=()=>{const d=request.result;for(const name of TABLES)if(!d.objectStoreNames.contains(name))d.createObjectStore(name,{keyPath:'id',autoIncrement:true});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});return openPromise;}
+export async function put(store,record){const d=await db();return new Promise((resolve,reject)=>{const tx=d.transaction(store,'readwrite');const request=tx.objectStore(store).add(record);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
+export async function getAll(store){const d=await db();return new Promise((resolve,reject)=>{const request=d.transaction(store).objectStore(store).getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
+export async function clearAll(){const d=await db();await Promise.all(TABLES.map(store=>new Promise((resolve,reject)=>{const tx=d.transaction(store,'readwrite');tx.objectStore(store).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);})));}
+export async function bundle(){const entries=await Promise.all(TABLES.map(async name=>[name,await getAll(name)]));return Object.fromEntries(entries);}
+export function saveFile(name,content,mime){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);}

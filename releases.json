@@ -1,0 +1,16 @@
+{
+  "currentVersion": "0.9.0",
+  "releases": [
+    {
+      "version": "0.9.0",
+      "publishedAt": "2026-10-24T02:14:01Z",
+      "changes": [
+        "Displayed the active version in small digits beside the Solvi XR logo.",
+        "Added a scrollable [dev] release overlay, newest changes first, with show/hide control.",
+        "Introduced full-update ZIP packages with strict version and checksum validation.",
+        "Added tested local staging, guarded SSH deployment, public HTTPS checks and backup rollback.",
+        "Preserved the existing WebXR lobby, Solvi model, teleportation and controller/hand interactions."
+      ]
+    }
+  ]
+}

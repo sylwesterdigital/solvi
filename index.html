@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090d1d">
+  <meta name="solvi-xr-profile-path" content="./vendor/xr-profiles/">
+  <meta name="solvi-draco-path" content="./vendor/draco/">
+  <title>Solvi XR v0.9.0 — Rantlist.me | Vanilla WebXR Prototype</title>
+  <link rel="stylesheet" href="./styles.css?v=090">
+  <script type="importmap">
+  {"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div id="three-root" aria-hidden="true"></div>
+    <div class="world-vignette" aria-hidden="true"></div>
+    <header class="top-bar">
+      <a class="brand" href="./" aria-label="Rantlist.me Solvi home"><span class="brand-symbol">✳</span><span>Rantlist<span class="brand-pink">.me</span></span><span class="brand-divider"></span><span class="brand-xr">XR / SOLVI</span><span class="solvi-version" id="solviVersion">v0.9.0</span></a>
+      <div class="top-right"><span id="lobbyStyleLabel" class="pill mode">Standard lobby</span><span class="pill pilot">PILOT PROTOTYPE · NOT A MEDICAL DEVICE</span><span id="modeLabel" class="pill mode">DESKTOP PREVIEW</span></div>
+    </header>
+
+    <main class="workspace">
+      <aside class="panel sidebar" aria-label="XR lobby navigation">
+        <div class="section-eyebrow">YOUR OPEN WORLD</div>
+        <h1>Explore your<br><em>potential.</em></h1>
+        <p class="intro">A calm place to practice movement, focus and self-reflection with Solvi.</p>
+        <div class="participant-row"><label for="participant">Pilot participant</label><input id="participant" maxlength="4" pattern="P[0-9]{3}" autocomplete="off" value="P001" aria-describedby="participantHint"><small id="participantHint">Use an anonymous code: P001–P999</small></div>
+        <div class="menu" id="mainMenu">
+          <button class="menu-item primary" data-action="reach"><span class="menu-icon">◎</span><span><strong>Start Reach session</strong><small>Simple movement challenge</small></span><span class="chevron">↗</span></button>
+          <button class="menu-item" data-action="info"><span class="menu-icon">▤</span><span><strong>Information</strong><small>Cognition & XR basics</small></span><span class="chevron">›</span></button>
+          <button class="menu-item" data-action="plan"><span class="menu-icon">▦</span><span><strong>Activation plan</strong><small>Choose your next step</small></span><span class="chevron">›</span></button>
+          <button class="menu-item" data-action="games"><span class="menu-icon">◇</span><span><strong>Games</strong><small>Future module preview</small></span><span class="chevron">›</span></button>
+          <button class="menu-item" data-action="progress"><span class="menu-icon">▥</span><span><strong>Progress</strong><small>Review your own sessions</small></span><span class="chevron">›</span></button>
+        </div>
+        <div class="sidebar-bottom"><p class="fineprint">Explore with mouse, keyboard, controllers or tracked hands. Sessions remain local to this browser.</p></div>
+      </aside>
+
+      <section class="view-area" aria-label="Immersive 3D lobby preview">
+        <div class="scene-tag"><span class="green-dot"></span> CALM SPACE <span class="scene-divider">/</span> TELEPORT ONLY · NO SMOOTH MOVEMENT</div>
+        <div class="view-heading"><span class="eyebrow">WELCOME TO YOUR SPACE</span><h2 id="sceneHeading">A little progress,<br><span>every day.</span></h2><p id="sceneDescription">Select a path or begin a gentle reach session.</p></div>
+        <div id="activityHUD" class="activity-hud hidden" aria-live="polite">
+          <div class="activity-title"><span>◉ REACH TRAINING</span><span id="timeLeft">01:00</span></div>
+          <p id="activityInstruction">Touch the target when it appears.</p>
+          <div class="activity-stats"><span>Hits <b id="hits">0</b></span><span>Level <b id="level">3</b></span><span>Points <b id="score">0</b></span></div>
+          <button data-action="simulate">Touch target · desktop test</button>
+        </div>
+        <div class="xr-launch" id="xrLaunch">
+          <span class="xr-launch-eyebrow">YOUR IMMERSIVE EXPERIENCE</span>
+          <button id="enterXR" class="xr-cta" data-action="xr" disabled><span class="xr-button-icon">◉</span> Checking WebXR… <span aria-hidden="true">↗</span></button>
+          <p class="fineprint" id="xrHint">Quest Browser requires HTTPS. Desktop preview remains available.</p>
+        </div>
+        <div id="progressStage" class="progress-stage hidden" aria-live="polite" aria-label="Your personal progress">
+          <div class="progress-label">YOUR JOURNEY · ONLY YOUR OWN RESULTS</div>
+          <div class="progress-digits">
+           <div><b id="progressSessions">0</b><span>SESSIONS</span></div>
+           <div><b id="progressBest">0</b><span>PERSONAL BEST</span></div>
+           <div><b id="progressHits">0</b><span>TOTAL HITS</span></div>
+          </div><button data-action="hub">Return to lobby</button>
+        </div>
+        <div class="view-bottom"><span>SEATED EXPERIENCE</span><span>VANILLA JS + THREE.JS + WEBXR</span></div>
+      </section>
+
+      <aside class="panel therapist" aria-label="AI assistant dialogue">
+        <div class="therapist-head"><div><span class="assistant-dot"></span><strong>SOLVI</strong><small>AI-assisted guide · demo</small></div><span class="live-label">● READY</span></div>
+        <div class="solvi-portrait"><div class="orb-ring"></div><div class="portrait-model-label" aria-hidden="true">SOLVI <small>3D companion in the lobby</small></div><span><span id="motionStatus">Solvi companion · idle and movement</span></span></div>
+        <div class="chat-bubble"><div class="chat-from">SOLVI SAYS</div><p id="solviMessage" aria-live="polite">Hello, I'm Solvi. How are you feeling today?</p></div>
+        <div class="quick-replies" id="quickReplies"><button data-action="feel-good">☺ <span>Feeling good</span></button><button data-action="feel-overwhelmed">◌ <span>Feeling overwhelmed</span></button><button data-action="repeat">↻ <span>Repeat</span></button><button data-action="talk">▷ <span>Talk to Solvi</span></button></div><div class="animation-controls"><button data-action="solvi-walk">Walk</button><button data-action="solvi-wave">Wave</button><button data-action="solvi-happy">Happy</button><button data-action="solvi-dance">Dance</button><button data-action="solvi-kick">Kick</button></div>
+        <div class="message-disclaimer">Guided demo responses only. No AI model, clinical judgement or diagnosis is connected.</div>
+        <div class="exports"><span>LOCAL DATA</span><div><button data-action="export-json">Export JSON</button><button data-action="export-csv">Trials CSV</button></div><div><button data-action="export-motion">Motion CSV</button><button data-action="delete">Delete local data</button></div></div>
+      </aside>
+    </main>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+    <div id="modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-card"><span class="eyebrow" id="modalKicker">SOLVI XR</span><h2 id="modalTitle">Session</h2><p id="modalBody"></p><div class="modal-actions" id="modalActions"></div></div></div>
+    <footer class="utility-bar" aria-label="Comfort and accessibility settings">
+      <button id="lobbyStyleBtn" data-action="lobby-style" aria-label="Switch lobby style"><span>Lobby: Standard</span></button>
+      <button id="captionsBtn" data-action="captions" aria-pressed="true">▣ <span>Captions on</span></button>
+      <button id="audioBtn" data-action="audio" aria-pressed="true">♫ <span>Sound on</span></button>
+      <button id="motionBtn" data-action="motion" aria-pressed="true">≋ <span>Reduced motion</span></button>
+      <button id="monoBtn" data-action="mono" aria-pressed="true">◉ <span>Mono audio</span></button>
+      <span class="divider"></span>
+      <button data-action="recenter">⌖ <span>Bring menu here</span></button>
+      <button data-action="reset-menu">▣ <span>Reset menu layout</span></button>
+      <button data-action="pause">Ⅱ <span>Pause / resume</span></button>
+      <button class="safe-place" data-action="safe">♡ <span>Safe place</span></button>
+    </footer>
+    <aside id="devOverlay" class="dev-overlay" aria-label="Development updates" aria-live="off">
+      <div class="dev-overlay-head"><div><span class="dev-tag">[dev]</span> <strong>Solvi updates</strong><small id="devCurrent">Current: v0.9.0</small></div><button id="devClose" class="dev-icon-button" type="button" aria-label="Hide updates">×</button></div>
+      <div class="dev-history" id="devHistory" tabindex="0" aria-label="Scrollable update history"><p>Loading release history…</p></div>
+    </aside>
+    <button id="devReopen" class="dev-reopen hidden" type="button" aria-label="Show development updates">[dev] <span id="devReopenVersion">v0.9.0</span></button>
+    <div id="fallback" class="fallback hidden">The 3D scene could not load. Check the browser console and the Three.js import map. The accessible desktop controls remain usable.</div>
+  </div>
+  <script defer src="./js/dev-overlay.js?v=090"></script>
+  <script type="module" src="./js/main.js?v=090"></script>
+</body>
+</html>

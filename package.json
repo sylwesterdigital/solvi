@@ -1,0 +1,15 @@
+{
+  "name": "solvi-vanilla-webxr",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-free Three.js / WebXR pilot prototype",
+  "scripts": {
+    "start": "node serve-https.mjs",
+    "start:lan": "node serve-https.mjs",
+    "start:desktop": "node serve.mjs",
+    "cert": "node create-certs.mjs",
+    "test": "node --test tests/*.test.js"
+  },
+  "license": "UNLICENSED"
+}
