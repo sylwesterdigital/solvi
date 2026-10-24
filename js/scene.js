@@ -20,7 +20,7 @@ function makeWorld(scene){
  const lobbyRoot=new THREE.Group();lobbyRoot.name="Classic Solvi lobby — original scene";scene.add(lobbyRoot);
  const decor=new THREE.Group();decor.name="Classic floating islands and skyline";lobbyRoot.add(decor);
  scene.background=new THREE.Color(0x0a132e);scene.fog=new THREE.FogExp2(0x13203c,.033);
- scene.add(new THREE.HemisphereLight(0xa2d5ff,0x17203a,2.2));const p=new THREE.DirectionalLight(0xffb8e4,2.4);p.position.set(-3,8,2);scene.add(p);const b=new THREE.PointLight(CYAN,35,12);b.position.set(2,2,-2);scene.add(b);
+ const ambient=new THREE.HemisphereLight(0xa2d5ff,0x17203a,2.2);scene.add(ambient);const p=new THREE.DirectionalLight(0xffb8e4,2.4);p.position.set(-3,8,2);scene.add(p);const b=new THREE.PointLight(CYAN,35,12);b.position.set(2,2,-2);scene.add(b);
  const floor=addMesh(lobbyRoot,new THREE.CircleGeometry(5,64),new THREE.MeshStandardMaterial({color:0x172743,metalness:.46,roughness:.36}),0,-.075,-1.5);floor.rotation.x=-Math.PI/2;
  const inner=addMesh(decor,new THREE.TorusGeometry(1.7,.016,5,74),new THREE.MeshBasicMaterial({color:PINK}),0,-.065,-1.45);inner.rotation.x=Math.PI/2;
  const outer=addMesh(decor,new THREE.TorusGeometry(2.18,.009,5,80),new THREE.MeshBasicMaterial({color:CYAN,transparent:true,opacity:.7}),0,-.062,-1.45);outer.rotation.x=Math.PI/2;

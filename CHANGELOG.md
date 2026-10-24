@@ -1,3 +1,9 @@
+## v0.10.1 — Fix 3D scene startup
+
+- Fix missing ambient light variable that prevented Three.js world initialization.
+- Add a scene-initialization regression test to prevent recurring startup failures.
+- Show the actual 3D loading error in the browser if another failure occurs.
+
 ## v0.10.0 — Focused Reach interactions
 
 - Pointer beams are hidden during target practice unless the user aims at the menu. Hand-tracking and controller models remain visible.

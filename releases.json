@@ -1,6 +1,15 @@
 {
-  "currentVersion": "0.10.0",
+  "currentVersion": "0.10.1",
   "releases": [
+    {
+      "version": "0.10.1",
+      "publishedAt": "2026-10-24T02:43:59Z",
+      "changes": [
+        "Fix missing ambient light variable that prevented Three.js world initialization.",
+        "Add a scene-initialization regression test to prevent recurring startup failures.",
+        "Show the actual 3D loading error in the browser if another failure occurs."
+      ]
+    },
     {
       "version": "0.10.0",
       "publishedAt": "2026-10-24T02:29:20Z",
