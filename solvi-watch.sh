@@ -3,21 +3,22 @@ set -euo pipefail
 # Self-contained Solvi release watcher for macOS (ZSH shell works).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec python3 - "$ROOT" "$@" <<'SOLVI_PYTHON'
-import os,sys,re,json,time,hashlib,zipfile,tempfile,shutil,subprocess,urllib.request,fcntl,datetime,stat,shlex,http.server,threading
+import os,sys,re,json,time,hashlib,zipfile,tempfile,shutil,subprocess,urllib.request,fcntl,datetime,stat,shlex,http.server,threading,traceback
 from pathlib import Path
 
 ROOT=Path(sys.argv[1]).resolve()
 ARGS=sys.argv[2:]
 WATCH=('--once' not in ARGS and '--dry-run' not in ARGS)
 DRY=('--dry-run' in ARGS)
-if any(a not in ('--watch','--once','--dry-run','--help') for a in ARGS):
- print('Usage: ./solvi-watch.sh [--watch | --once | --dry-run]',file=sys.stderr);sys.exit(2)
+if any(a not in ('--watch','--once','--dry-run','--help','--last-log') for a in ARGS):
+ print('Usage: ./solvi-watch.sh [--watch | --once | --dry-run | --last-log]',file=sys.stderr);sys.exit(2)
 if '--help' in ARGS:
- print('Usage: ./solvi-watch.sh [--watch | --once | --dry-run]')
+ print('Usage: ./solvi-watch.sh [--watch | --once | --dry-run | --last-log]')
  print('By default watches updates/*.zip; --once processes present ZIPs; --dry-run validates only.')
  print('Server: root@yolo.cx:18021 -> /var/www/mojoworks/labs/solvi/')
  print('GitHub SSH: git@github.com:sylwesterdigital/solvi.git (main)')
  print('URL: https://mojoworks.xyz/labs/solvi/')
+ print('Logs: .solvi/logs/ (use --last-log to print the latest log)')
  sys.exit(0)
 
 # Fixed deployment target — no server configuration or environment variables required.
@@ -36,16 +37,98 @@ VENDOR_REQUIRED=['vendor/three.module.js','vendor/addons/loaders/GLTFLoader.js',
 SHA_RE=re.compile(r'^[a-f0-9]{64}$'); VER_RE=re.compile(r'^\d+\.\d+\.\d+$')
 VALID_PATH=re.compile(r'^[\w./-]+$')
 
-def log(s): print(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),s,flush=True)
+# ANSI colours are for terminals only. Release logs are always plain UTF-8 text,
+# suitable for sharing in GitHub issues or pasting into ChatGPT.
+USE_COLOR=sys.stdout.isatty() and os.environ.get('NO_COLOR') is None and os.environ.get('TERM','')!='dumb'
+ANSI={
+ 'START':'\033[1;35m', 'STEP':'\033[1;34m', 'PASS':'\033[1;32m',
+ 'FAIL':'\033[1;31m', 'WARN':'\033[1;33m', 'INFO':'\033[0;36m',
+ 'DONE':'\033[1;32m', 'CMD':'\033[2m'
+}
+LOG_FILE=None
+
+def stamp():
+ return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+def write_log(line):
+ if LOG_FILE is not None:
+  with LOG_FILE.open('a',encoding='utf-8') as handle:
+   handle.write(line+'\n')
+
+def status(level,message):
+ tag=f'[{level:<5}]'
+ line=f'{stamp()} {tag} {message}'
+ write_log(line)
+ colour=ANSI.get(level,'') if USE_COLOR else ''
+ reset='\033[0m' if colour else ''
+ print(f'{stamp()} {colour}{tag}{reset} {message}',flush=True)
+
+def log(message):status('INFO',message)
+
+def begin_release_log(archive):
+ global LOG_FILE
+ directory=STATE/'logs';directory.mkdir(parents=True,exist_ok=True)
+ now=datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+ safe=re.sub(r'[^A-Za-z0-9._-]+','_',archive.stem)[:70]
+ candidate=directory/f'{now}_{safe}.log'
+ number=2
+ while candidate.exists():
+  candidate=directory/f'{now}_{safe}_{number}.log';number+=1
+ LOG_FILE=candidate
+ status('START',f'DEPLOYMENT BEGIN — {archive.name}')
+ status('INFO',f'Log: {LOG_FILE}')
+
+def step(name,fn):
+ status('STEP',name)
+ try:
+  value=fn()
+ except Exception as exc:
+  status('FAIL',f'{name} — {exc}')
+  raise
+ status('PASS',name)
+ return value
+
+def last_log():
+ logs=sorted((STATE/'logs').glob('*.log')) if (STATE/'logs').is_dir() else []
+ if not logs:
+  print('No deployment logs found in '+str(STATE/'logs'),file=sys.stderr)
+  return 1
+ print('=== '+str(logs[-1])+' ===')
+ print(logs[-1].read_text(encoding='utf-8'),end='')
+ return 0
+
+def run(command,cwd=None,check=True,**kwargs):
+ command=[str(c) for c in command]
+ cmdline=' '.join(shlex.quote(c) for c in command)
+ write_log(f'{stamp()} [CMD  ] $ {cmdline}')
+ # Capture the output for shareable logs; retain explicit stdout/stderr contracts.
+ capture_default=not any(k in kwargs for k in ('stdout','stderr','capture_output'))
+ if capture_default:
+  kwargs['stdout']=subprocess.PIPE
+  kwargs['stderr']=subprocess.STDOUT
+  kwargs['text']=True
+ elif kwargs.get('stdout') is subprocess.PIPE and 'stderr' not in kwargs:
+  kwargs['stderr']=subprocess.PIPE
+ result=subprocess.run(command,cwd=cwd,check=False,**kwargs)
+ def to_text(value):
+  if value is None:return ''
+  return value.decode('utf-8','replace') if isinstance(value,bytes) else str(value)
+ output='\n'.join(x for x in (to_text(result.stdout),to_text(result.stderr)) if x)
+ if output:
+  for line in output.splitlines():write_log('    '+line)
+ if check and result.returncode:
+  status('FAIL',f'Command returned exit code {result.returncode}: {cmdline}')
+  if output:
+   for line in output.splitlines()[-12:]:
+    print('      '+line,flush=True)
+  raise subprocess.CalledProcessError(result.returncode,command,output=result.stdout,stderr=result.stderr)
+ return result
+
 def check_safe_config():
  if not re.fullmatch(r'[\w.@-]+',REMOTE_HOST): raise RuntimeError('Unsafe SSH host name')
  if not REMOTE_PORT.isdigit() or int(REMOTE_PORT) not in range(1,65536): raise RuntimeError('Invalid SSH port')
  if not REMOTE.startswith('/') or REMOTE in ('/','/var','/var/www') or not VALID_PATH.fullmatch(REMOTE) or '..' in Path(REMOTE).parts: raise RuntimeError('Unsafe deployment path')
  if not PUBLIC.startswith('https://'): raise RuntimeError('Public URL must be HTTPS')
-
-def run(command,cwd=None,check=True,**kwargs):
- print('  $',' '.join(shlex.quote(str(c)) for c in command),flush=True)
- return subprocess.run(command,cwd=cwd,check=check,**kwargs)
 
 def manifest_archive(zipname,target):
  with zipfile.ZipFile(zipname) as z:
@@ -268,7 +351,7 @@ def persist_repo(stage,manifest):
  for path in stage.rglob('*'):
   if not path.is_file():continue
   rel=path.relative_to(stage)
-  if rel == Path('.gitignore'): continue  # retain the cloned repository's ignore rules
+  if rel in (Path('.gitignore'),Path('solvi-watch.sh')): continue  # retain repository ignore rules and installed watcher
   dest=ROOT/rel;dest.parent.mkdir(parents=True,exist_ok=True)
   shutil.copy2(path,dest);added.append(str(rel))
  # Keep watcher script itself in the repo's commit to establish a reproducible workflow.
@@ -280,30 +363,30 @@ def persist_repo(stage,manifest):
  github_push()
 
 def process(zipname):
- log('Inspecting '+zipname.name)
  with tempfile.TemporaryDirectory(prefix='candidate-',dir=STATE) as tmp:
   stage=Path(tmp)/'site';stage.mkdir()
-  manifest=manifest_archive(zipname,stage)
-  check_version(manifest['version'])
-  build_release(stage,manifest)
-  prep_vendor(stage)
-  test_local(stage)
-  git_preflight(stage)
-  github_preflight()
+  manifest=step('Validate ZIP manifest and SHA-256',lambda: manifest_archive(zipname,stage))
+  version=manifest['version']
+  status('INFO',f'Release: v{version} | {REMOTE_HOST}:{REMOTE} | GitHub {GITHUB_BRANCH}')
+  step('Check version and build release history',lambda: (check_version(version),build_release(stage,manifest)))
+  step('Prepare Three.js / Draco / XR assets',lambda: prep_vendor(stage))
+  step('JavaScript syntax, unit tests and local HTTP',lambda: test_local(stage))
+  step('Local Git and GitHub SSH preflight',lambda: (git_preflight(stage),github_preflight()))
   if DRY:
-   log('DRY-RUN PASSED for v'+manifest['version']+' (nothing changed)');return
-  # First commit and push source to GitHub over SSH. If GitHub fails, do not touch the site.
-  persist_repo(stage,manifest)
-  # Only then publish, with existing remote backup and rollback verification.
+   status('DONE',f'DRY RUN PASSED — v{version}; no files changed or deployed')
+   return
+  step('Commit and push release to GitHub (SSH)',lambda: persist_repo(stage,manifest))
   try:
-   backup=deploy_remote(stage,manifest['version'])
+   backup=step('Deploy via SSH + backup + public HTTPS verification',lambda: deploy_remote(stage,version))
   except Exception:
-   log('Site deployment failed after GitHub push. Server rollback attempted; GitHub main contains v'+manifest['version']+'.')
+   status('WARN',f'GitHub already contains v{version}; server rollback was attempted. Check the log.')
    raise
-  log('SUCCESS: v'+manifest['version']+' pushed to GitHub via SSH and published at '+PUBLIC)
-  log('Remote rollback backup: '+backup)
+  status('DONE',f'DEPLOYMENT SUCCESS — v{version} — {PUBLIC}')
+  log('Remote backup: '+backup)
 
 def main():
+ if '--last-log' in ARGS:
+  return last_log()
  check_safe_config()
  if not ROOT.is_dir() or not (ROOT/'.git').exists():raise RuntimeError(f'Not a Git repository root: {ROOT}')
  UPDATES.mkdir(exist_ok=True);STATE.mkdir(exist_ok=True)
@@ -311,12 +394,14 @@ def main():
  lock=open(STATE/'watch.lock','w')
  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
  except BlockingIOError:raise RuntimeError('Another solvi-watch instance is already running.')
- log('Watching '+str(UPDATES)+' | target '+REMOTE_HOST+':'+REMOTE+' | GitHub '+GITHUB_SSH+' | '+PUBLIC)
+ status('START','SOLVI WATCHER READY — monitoring '+str(UPDATES))
+ log('SSH: '+REMOTE_HOST+':'+REMOTE_PORT+' | GitHub: '+GITHUB_SSH+' | URL: '+PUBLIC)
  failures=0
  while True:
   pending=sorted(UPDATES.glob('*.zip'),key=lambda p: tuple(int(x) for x in re.findall(r'\d+',p.stem)[-3:]) if len(re.findall(r'\d+',p.stem))>=3 else (0,0,0))
   for item in pending:
    if WATCH and time.time()-item.stat().st_mtime<3: continue
+   begin_release_log(item)
    try:
     process(item)
     if not DRY:
@@ -324,21 +409,26 @@ def main():
      if destination.exists(): destination=UPDATES/'processed'/(item.stem+'-'+str(int(time.time()))+'.zip')
      item.rename(destination)
    except Exception as e:
-    import traceback
     msg=''.join(traceback.format_exception(e))
-    log('ERROR processing '+item.name+'\n'+msg)
+    status('FAIL','DEPLOYMENT FAILED — '+item.name+' — '+str(e))
+    write_log(msg.rstrip())
     failures+=1
     if not DRY:
      failed=UPDATES/'failed'/item.name
      if failed.exists():failed=UPDATES/'failed'/(item.stem+'-'+str(int(time.time()))+'.zip')
      failed.write_bytes(item.read_bytes());item.unlink()
-     (failed.parent/(failed.name+'.error.log')).write_text(msg)
+     (failed.parent/(failed.name+'.error.log')).write_text(msg+'\nDetailed log: '+str(LOG_FILE)+'\n')
+   finally:
+    if LOG_FILE is not None:
+     status('INFO','Share this log: '+str(LOG_FILE))
+     globals()['LOG_FILE']=None
   if not WATCH:break
   time.sleep(3)
  if failures:sys.exit(1)
+ return 0
 
-try:main()
-except KeyboardInterrupt:log('Watch stopped by user.')
-except Exception as e:print(f'Solvi watcher error: {e}',file=sys.stderr);sys.exit(1)
+try:sys.exit(main())
+except KeyboardInterrupt:status('WARN','Watcher stopped by user.')
+except Exception as e:status('FAIL',f'Watcher error: {e}');sys.exit(1)
 
 SOLVI_PYTHON

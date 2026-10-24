@@ -1,6 +1,15 @@
 {
-  "currentVersion": "0.9.0",
+  "currentVersion": "0.10.0",
   "releases": [
+    {
+      "version": "0.10.0",
+      "publishedAt": "2026-10-24T02:29:20Z",
+      "changes": [
+        "Hide controller and hand pointing rays during Reach unless aiming at an interactive menu.",
+        "Keep a draggable, legible challenge control panel on the left, outside the reaching corridor.",
+        "Gently dim scenery and idle UI during Reach while keeping exercise targets bright."
+      ]
+    },
     {
       "version": "0.9.0",
       "publishedAt": "2026-10-24T02:14:01Z",

@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import {layoutForView,isChallengeView,nearestActionHit,visiblePanelsForView} from './xr-ui-policy.js?v=090';
+import {layoutForView,isChallengeView,nearestActionHit,visiblePanelsForView,shouldShowMenuPointer,safeChallengePanelCenter} from './xr-ui-policy.js?v=0100';
 import {XRControllerModelFactory} from 'three/addons/webxr/XRControllerModelFactory.js';
 import {XRHandModelFactory} from 'three/addons/webxr/XRHandModelFactory.js';
 import {placementFromEye} from './xr-placement.js';
 import {referenceSpaceOffset,withinPlatform,ballisticSamples,findFloorCrossing,clampMenuCenter,thumbstickIntent} from './xr-navigation.js';
 
 const PINK=0xff62c4, CYAN=0x73dcff, NAVY=0x0a132c;
+const BACKGROUND_LOBBY=new THREE.Color(0x0a132e);
+const BACKGROUND_CHALLENGE=new THREE.Color(0x060a15);
 const CAT_YAW_RADIANS=0; // Change to Math.PI only if this specific GLB faces away.
 const MODEL_URL=new URL('../assets/anthropomorphiccat3dmodel.glb', import.meta.url).href;
 const vec=new THREE.Vector3(),quat=new THREE.Quaternion(),forward=new THREE.Vector3(),right=new THREE.Vector3();
@@ -28,7 +30,7 @@ function makeWorld(scene){
  // The far sky arch and vertical columns establish an orientation landmark without locomotion.
  const arch=addMesh(decor,new THREE.TorusGeometry(3.2,.038,8,80,Math.PI),new THREE.MeshBasicMaterial({color:0x8959aa,transparent:true,opacity:.58}),0,2.1,-8);arch.rotation.z=Math.PI;
  for(let i=0;i<8;i++){const x=-6+i*1.8,h=1.8+(i*7%5)*.55;addMesh(decor,new THREE.CylinderGeometry(.11,.17,h,6),material(0x34446c),x,h/2,-9-((i*13)%3));}
- return {floor,platformGlow,decor,lobbyRoot};
+ return {floor,platformGlow,decor,lobbyRoot,ambient,keyLight:p,accentLight:b};
 }
 
 // Model and input code is purposely framework-free. XR index is only an implementation
@@ -71,11 +73,12 @@ export class XRWorld {
   this.lobbyPanel.name='Solvi Lobby — not displayed during challenge';
   this.lobbyPanel.renderOrder=12;this.lobbyPanel.visible=false;
   this.hudCanvas=document.createElement('canvas');
-  this.hudCanvas.width=1440;this.hudCanvas.height=426;
+  this.hudCanvas.width=1440;this.hudCanvas.height=576;
   this.hudCtx=this.hudCanvas.getContext('2d');
   this.hudTexture=new THREE.CanvasTexture(this.hudCanvas);this.hudTexture.colorSpace=THREE.SRGBColorSpace;
-  this.hudPanel=new THREE.Mesh(new THREE.PlaneGeometry(1.08,.32),
-   new THREE.MeshBasicMaterial({map:this.hudTexture,side:THREE.DoubleSide,depthTest:true,depthWrite:false,toneMapped:false}));
+  this.hudPanel=new THREE.Mesh(new THREE.PlaneGeometry(1.48,.59),
+   new THREE.MeshBasicMaterial({map:this.hudTexture,side:THREE.DoubleSide,transparent:true,opacity:.58,
+    depthTest:true,depthWrite:false,toneMapped:false}));
   this.hudPanel.name='Solvi Challenge HUD — separate from lobby';
   this.hudPanel.renderOrder=12;this.hudPanel.visible=false;
   this.scene.add(this.lobbyPanel,this.hudPanel);
@@ -109,6 +112,7 @@ export class XRWorld {
   this.tempPosition2=new THREE.Vector3();this.tempDir=new THREE.Vector3();
   this.lastSelection=new WeakMap();
   this.menuPositionKey="solvi-v08-menu-pose";
+  this.challengeMenuPositionKey="solvi-v010-challenge-menu-pose";
   this.cursor=new THREE.Mesh(new THREE.SphereGeometry(.014,10,8),
    new THREE.MeshBasicMaterial({color:0xffdc48,depthTest:false,depthWrite:false}));
   this.cursor.visible=false;this.cursor.renderOrder=1200;this.scene.add(this.cursor);
@@ -431,12 +435,13 @@ export class XRWorld {
    if(clearSaved){try{localStorage.removeItem(this.menuPositionKey);}catch{}}
    this.syncMenuWall();this.refreshPanel(true);return true;
   }
-  saveMenuPlacement(){
+  saveMenuPlacement(panel=this.lobbyPanel){
    if(!this.xr)return;
    this.worldProps.lobbyRoot.updateMatrixWorld(true);
-   const p=this.worldProps.lobbyRoot.worldToLocal(this.lobbyPanel.position.clone());
-   const yaw=this.lobbyPanel.rotation.y-this.worldProps.lobbyRoot.rotation.y;
-   try{localStorage.setItem(this.menuPositionKey,JSON.stringify({x:p.x,y:p.y,z:p.z,yaw}));}catch{}
+   const p=this.worldProps.lobbyRoot.worldToLocal(panel.position.clone());
+   const yaw=panel.rotation.y-this.worldProps.lobbyRoot.rotation.y;
+   const key=panel===this.hudPanel?this.challengeMenuPositionKey:this.menuPositionKey;
+   try{localStorage.setItem(key,JSON.stringify({x:p.x,y:p.y,z:p.z,yaw}));}catch{}
   }
   pointerPose(record){
    if(record.source?.hand){
@@ -453,12 +458,12 @@ export class XRWorld {
     direction:new THREE.Vector3(0,0,-1).applyQuaternion(record.controller.getWorldQuaternion(new THREE.Quaternion())).normalize()};
   }
   tryStartMenuDrag(record,method='grip'){
-   if(!this.xr||this.menuDrag||this.teleportState||!this.lobbyPanel.visible||!record.source)return false;
+   if(!this.xr||this.menuDrag||this.teleportState||!this.panel.visible||!record.source)return false;
    const pose=this.pointerPose(record);if(!pose)return false;
    const hit=this.hitPanel(pose.origin,pose.direction);
    if(hit?.region?.action!=='move-menu')return false;
-   this.menuDrag={record,method,distance:Math.max(.5,hit.distance),
-    offset:hit.point.clone().sub(this.lobbyPanel.position)};
+   this.menuDrag={record,method,panel:this.panel,distance:Math.max(.5,hit.distance),
+    offset:hit.point.clone().sub(this.panel.position)};
    this.setHover('move-menu',record.source);this.refreshPanel(true);
    return true;
   }
@@ -467,12 +472,15 @@ export class XRWorld {
    const p=this.pointerPose(drag.record);if(!p){this.endMenuDrag();return;}
    const center=p.origin.clone().addScaledVector(p.direction,drag.distance).sub(drag.offset);
    const floor=this.worldProps.lobbyRoot.position.y;
-   const clamped=clampMenuCenter(center,{floorY:floor,minY:1.13,maxY:2.9});
-   this.lobbyPanel.position.set(clamped.x,clamped.y,clamped.z);
+   const isChallenge=drag.panel===this.hudPanel;
+   const clamped=clampMenuCenter(center,{floorY:floor,minY:isChallenge ? .72 : 1.13,maxY:2.9});
    const head=this.getHeadPose();
-   if(head){const toward=head.position.clone().sub(this.lobbyPanel.position);toward.y=0;
-    if(toward.lengthSq()>.02)this.lobbyPanel.rotation.y=Math.atan2(toward.x,toward.z);}
-   this.syncMenuWall();this.panel.updateMatrixWorld(true);this.refreshPanel(true);
+   const placed=isChallenge&&head?safeChallengePanelCenter(clamped,head.position,head.forward,head.right):clamped;
+   drag.panel.position.set(placed.x,placed.y,placed.z);
+   if(head){const toward=head.position.clone().sub(drag.panel.position);toward.y=0;
+    if(toward.lengthSq()>.02)drag.panel.rotation.y=Math.atan2(toward.x,toward.z);}
+   if(!isChallenge)this.syncMenuWall();
+   drag.panel.updateMatrixWorld(true);this.refreshPanel(true);
   }
   finishMenuDrag(record,method){
    if(this.menuDrag?.record!==record||this.menuDrag?.method!==method)return;
@@ -480,7 +488,10 @@ export class XRWorld {
   }
   endMenuDrag(){
    if(!this.menuDrag)return;
-   this.menuDrag=null;this.saveMenuPlacement();this.refreshPanel(true);
+   const panel=this.menuDrag.panel;
+   this.menuDrag=null;
+   this.saveMenuPlacement(panel);
+   this.refreshPanel(true);
   }
   cancelTeleport(){
    this.teleportState=null;this.teleportArc.visible=false;
@@ -615,10 +626,23 @@ export class XRWorld {
  positionChallengeHUD(pose=this.lastHead){
   if(!pose)return;
   const {position,forward:f,right:r}=pose;
-  // Light status strip above and to the LEFT, well outside near-reach targets.
-  this.hudPanel.position.copy(position).addScaledVector(f,1.55)
-   .addScaledVector(r,-.43).add(new THREE.Vector3(0,.34,0));
-  this.hudPanel.rotation.set(0,Math.atan2(-f.x,-f.z),0);
+  // A genuinely SIDE-mounted control station, outside the near-reach corridor.
+  // At ~1.95m forward / 1.55m left, the panel is clear of targets within 0.5m.
+  this.hudPanel.position.copy(position).addScaledVector(f,1.95)
+   .addScaledVector(r,-1.55).add(new THREE.Vector3(0,-.08,0));
+  const look=position.clone().sub(this.hudPanel.position);look.y=0;
+  this.hudPanel.rotation.set(0,Math.atan2(look.x,look.z),0);
+  // A custom placement is relative to the original room anchor, not the camera.
+  try{
+   const saved=JSON.parse(localStorage.getItem(this.challengeMenuPositionKey)||'null');
+   if(saved&&[saved.x,saved.y,saved.z,saved.yaw].every(Number.isFinite)){
+    this.worldProps.lobbyRoot.updateMatrixWorld(true);
+    const candidate=this.worldProps.lobbyRoot.localToWorld(new THREE.Vector3(saved.x,saved.y,saved.z));
+    const safe=safeChallengePanelCenter(candidate,position,f,r);
+    this.hudPanel.position.set(safe.x,safe.y,safe.z);
+    this.hudPanel.rotation.y=this.worldProps.lobbyRoot.rotation.y+saved.yaw;
+   }
+  }catch{}
  }
  updatePanelLayout(view){
   const challenge=isChallengeView(view);
@@ -641,36 +665,47 @@ export class XRWorld {
    this.hoverAction=null;
    this.lastPanelKey='';
   }
-  if(challenge)this.positionChallengeHUD();
+  // Do not reposition a user-dragged side panel on every frame.
+  if(challenge&&oldMode!==nextMode)this.positionChallengeHUD();
  }
  drawChallengeHUD(view,accent,fg,sub){
   const ctx=this.panelCtx,W=this.panelCanvas.width,H=this.panelCanvas.height;
   const hot=this.hoverAction,pressed=performance.now()<this.pressedUntil?this.pressedAction:null;
   const accessible=this.getSettings().lobbyVariant==='accessible';
-  ctx.fillStyle=accessible?'#050505':'#0b1b2b';
-  ctx.beginPath();ctx.roundRect(8,8,W-16,H-16,30);ctx.fill();
-  ctx.strokeStyle=accent;ctx.lineWidth=accessible?12:6;ctx.stroke();
-  ctx.textAlign='left';ctx.font='bold 35px Arial';ctx.fillStyle=accent;
-  ctx.fillText('REACH CHALLENGE',48,61);
-  ctx.textAlign='right';ctx.fillStyle=fg;ctx.font='bold 62px Arial';
-  ctx.fillText(view.time||'00:00',W-48,87);
-  ctx.textAlign='left';ctx.fillStyle=fg;ctx.font='bold 48px Arial';
-  ctx.fillText(view.instruction||'Touch the next target',48,148,W-100);
-  ctx.fillStyle=sub;ctx.font='bold 31px Arial';
-  ctx.fillText(`HITS ${view.hits||0}   ·   POINTS ${view.score||0}`,50,204);
+  ctx.fillStyle=accessible?'#030303':'#081628';
+  ctx.beginPath();ctx.roundRect(8,8,W-16,H-16,32);ctx.fill();
+  ctx.strokeStyle=accent;ctx.lineWidth=accessible?13:6;ctx.stroke();
+  ctx.textAlign='left';ctx.font='bold 43px Arial';ctx.fillStyle=accent;
+  ctx.fillText('REACH  /  CONTROLS',48,75);
+  ctx.textAlign='right';ctx.fillStyle=fg;ctx.font='bold 69px Arial';
+  ctx.fillText(view.time||'00:00',W-53,94);
+  // Always show the grab handle in both lobby and challenge mode.
+  const dragging=this.menuDrag?.panel===this.hudPanel;
+  ctx.fillStyle=dragging?'#ffffff':hot==='move-menu'?'#a0ecff':accessible?'#fff063':'#235a7b';
+  ctx.beginPath();ctx.roundRect(1020,121,369,85,17);ctx.fill();
+  ctx.fillStyle=dragging||hot==='move-menu'||accessible?'#081426':'#ffffff';
+  ctx.textAlign='center';ctx.font='bold 35px Arial';
+  ctx.fillText('⠿ MOVE PANEL',1204,177,345);
+  this.panelRegions=[{x:1020,y:121,w:369,h:85,action:'move-menu'}];
+  ctx.textAlign='left';ctx.fillStyle=fg;ctx.font='bold 47px Arial';
+  ctx.fillText(view.instruction||'Touch the next target',50,199,930);
+  ctx.fillStyle=sub;ctx.font='bold 39px Arial';
+  ctx.fillText(`HITS  ${view.hits||0}     ·     POINTS  ${view.score||0}`,50,279);
   const buttons=[{action:'pause',label:'PAUSE'},{action:'safe',label:'SAFE PLACE'},{action:'end',label:'END'}];
-  this.panelRegions=[];
-  const gap=20,x0=48,y=249,h=139,w=(W-96-gap*2)/3;
+  const gap=22,x0=48,y=338,h=162,w=(W-96-gap*2)/3;
   buttons.forEach((btn,i)=>{
    const x=x0+i*(w+gap),active=hot===btn.action,down=pressed===btn.action;
-   ctx.fillStyle=down?'#ffffff':active?'#79ddff':accessible?'#ffea38':i===0?'#ff79c6':'#24445b';
-   ctx.beginPath();ctx.roundRect(x,y,w,h,22);ctx.fill();
+   ctx.fillStyle=down?'#ffffff':active?'#79ddff':accessible?'#ffea38':i===0?'#fa76c3':'#24445b';
+   ctx.beginPath();ctx.roundRect(x,y,w,h,23);ctx.fill();
    ctx.strokeStyle=active?'#ffffff':accessible?'#ffffff':'#8bbdcc';ctx.lineWidth=active?9:4;ctx.stroke();
    ctx.fillStyle=active||down||accessible||i===0?'#0b182b':'#ffffff';
-   ctx.font='bold 41px Arial';ctx.textAlign='center';ctx.fillText(btn.label,x+w/2,y+84,w-25);
+   ctx.font='bold 41px Arial';ctx.textAlign='center';ctx.fillText(btn.label,x+w/2,y+97,w-25);
    this.panelRegions.push({x,y,w,h,action:btn.action});
   });
+  ctx.fillStyle=sub;ctx.textAlign='left';ctx.font='27px Arial';
+  ctx.fillText('Rays only when aiming at this panel  ·  Grip / pinch MOVE PANEL',50,550,W-100);
  }
+
  refreshPanel(force=false){
   if(!this.xr)return;
   const view=this.makeView?.()||{},theme=this.getSettings().lobbyVariant||'standard';
@@ -862,6 +897,16 @@ export class XRWorld {
   const dt=this.lastAnimationTime?Math.min((t-this.lastAnimationTime)/1000,.075):0;
   this.lastAnimationTime=t;
   this.updateCatBehavior(t,dt);
+  const challenge=isChallengeView(this.makeView?.()||{});
+  // Gentle scene focus: target materials are unlit and remain bright.
+  // Do not suppress scenery or Solvi, simply lower ambient distractions.
+  const smoothing=Math.min(1,dt*4);
+  const {ambient,keyLight,accentLight}=this.worldProps;
+  ambient.intensity=THREE.MathUtils.lerp(ambient.intensity,challenge? .60:2.2,smoothing);
+  keyLight.intensity=THREE.MathUtils.lerp(keyLight.intensity,challenge? .85:2.4,smoothing);
+  accentLight.intensity=THREE.MathUtils.lerp(accentLight.intensity,challenge? 7:35,smoothing);
+  this.renderer.toneMappingExposure=THREE.MathUtils.lerp(this.renderer.toneMappingExposure,challenge? .83:1.25,smoothing);
+  this.scene.background.lerp(challenge?BACKGROUND_CHALLENGE:BACKGROUND_LOBBY,smoothing);
   this.worldProps.decor.visible=this.getSettings().lobbyVariant!=='accessible';
   if(this.xr){
    const tracked=this.getHeadPose(frame);
@@ -895,7 +940,7 @@ export class XRWorld {
      const wristPos=wrist?.visible?wrist.getWorldPosition(new THREE.Vector3()):point.clone().add(new THREE.Vector3(0,0,.2));
      dir=point.clone().sub(wristPos).normalize();
      if(dir.lengthSq()<.01)dir.set(0,0,-1);
-     record.handTip.position.copy(point);record.handTip.visible=true;
+     record.handTip.position.copy(point);record.handTip.visible=!isChallengeView(this.makeView?.()||{});
      if(wrist?.visible){record.palmMarker.position.copy(wristPos);record.palmMarker.visible=true;}
      const pinchDistance=point.distanceTo(thumbPos);
      if(pinchDistance<.032&&!record.wasPinching){
@@ -929,12 +974,18 @@ export class XRWorld {
     const targetHit=this.getTargetRayHit(point,dir);
     const choice=nearestActionHit(panelHit,targetHit);
     const hover=choice==='menu'?panelHit:null;
-    const length=choice==='target'?Math.max(.12,targetHit.distance):hover?Math.max(.12,hover.distance):3.6;
-    if(src.hand){this.updateBeam(record.handBeam,point,dir,length);}
-    else{
-     this.updateBeam(record.ray,point,dir,length);
-     record.tip.position.copy(point).addScaledVector(dir,length);
-     record.tip.visible=true;
+    // No distracting rays during catch/reach exercises. Only point at menu UI.
+    // Tracked fingers and controllers use the same policy and keep their models visible.
+    const showRay=shouldShowMenuPointer({panelVisible:this.panel.visible,
+      panelHit,targetHit,teleporting:!!this.teleportState});
+    if(showRay){
+     const length=Math.max(.12,panelHit.distance);
+     if(src.hand)this.updateBeam(record.handBeam,point,dir,length);
+     else{
+      this.updateBeam(record.ray,point,dir,length);
+      record.tip.position.copy(point).addScaledVector(dir,length);
+      record.tip.visible=true;
+     }
     }
     if(hover){
      const distance=point.distanceTo(hover.point);
@@ -952,6 +1003,11 @@ export class XRWorld {
    if(this.menuDrag){this.updateMenuDrag();this.setHover('move-menu',this.menuDrag?.record?.source);}
    else if(this.teleportState)this.setHover(null,null);
    else this.setHover(nearestHover,nearestHoverSource);
+   // Side panel is quiet while the participant focuses on moving objects.
+   const hudEngaged=Boolean(this.menuDrag?.panel===this.hudPanel||
+    (nearestHover&&this.panel===this.hudPanel)||this.isPaused);
+   this.hudPanel.material.opacity=THREE.MathUtils.lerp(this.hudPanel.material.opacity,
+    hudEngaged?1:.53,.22);
   }
   this.renderer.render(this.scene,this.camera);
  }

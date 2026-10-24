@@ -1,3 +1,11 @@
+## v0.10.0 — Focused Reach interactions
+
+- Pointer beams are hidden during target practice unless the user aims at the menu. Hand-tracking and controller models remain visible.
+- A larger but side-mounted Reach control panel stays out of the catch area, supports grip/trigger/pinch repositioning, and keeps the central reaching corridor protected.
+- Lobby lighting gently dims during Reach; the inactive side HUD is subdued until looked at with a pointer. Targets retain their bright, unlit colors.
+
+**Validation:** Automated logic and syntax checks only; headset interaction must still be verified on Quest 3S.
+
 ## v0.9.0 — Development release workflow
 
 - Version indicator next to Rantlist.me logo.

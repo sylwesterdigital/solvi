@@ -6,6 +6,6 @@ test('Reach challenge uses HUD only — lobby entirely hidden',()=>{
  assert.deepEqual(visiblePanelsForView({title:'Lobby'}),{lobby:true,hud:false});
 });
 test('challenge panel dimensions remain separate from full lobby',()=>{
- assert.equal(layoutForView({mode:'challenge'}).height,.32);
+ assert.equal(layoutForView({mode:'challenge'}).height,.59);
  assert.equal(layoutForView({mode:'lobby'}).height,2.18);
 });

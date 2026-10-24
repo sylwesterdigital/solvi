@@ -8,7 +8,7 @@
   const reopenVersion = document.getElementById('devReopenVersion');
   const close = document.getElementById('devClose');
   if (!versionNode || !historyNode) return;
-  const fallbackVersion = '0.9.0';
+  const fallbackVersion = '0.10.0';
   const local = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
   const putLocal = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
   const hidden = local('solvi-dev-hidden') === '1';
